@@ -15,7 +15,7 @@ class State(str, Enum):
 
 class General(Thread):
     def __init__(self, id: int, port: int, host: str = "127.0.0.1") -> None:
-        super().__init__()
+        super(General, self).__init__(daemon=True)
         self._id = id
         self._port = port
         self._host = host
@@ -28,6 +28,14 @@ class General(Thread):
     @property
     def id(self):
         return self._id
+
+    @property
+    def port(self):
+        return self._port
+
+    @property
+    def host(self):
+        return self._host
 
     @property
     def state(self):
@@ -44,6 +52,18 @@ class General(Thread):
     @isPrimary.setter
     def isPrimary(self, value):
         self._primary = value
+
+    @property
+    def sock(self):
+        return self._sock
+
+    def init_server(self):
+        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.sock.bind((self.host, self.port))
+        self.sock.listen()
+
+    def run(self) -> None:
+        return super().run()
 
     def __repr__(self) -> str:
         return f"P{self.id}, STATE={self.state}, ORDER={self.order}"

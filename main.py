@@ -9,11 +9,7 @@ parser = argparse.ArgumentParser(description="Generals Byzantine program...")
 parser.add_argument("generals", type=int, help="number of generals")
 
 
-def main():
-    args = parser.parse_args()
-    n_generals = args.generals
-    cmd_center = CommandCenter()
-
+def create_generals(n_generals: int):
     for n in range(1, n_generals + 1):
         proc = General(n, 0)
 
@@ -22,6 +18,13 @@ def main():
 
         GENERALS.append(proc)
 
+
+def main():
+    args = parser.parse_args()
+    n_generals = args.generals
+    create_generals(n_generals)
+
+    cmd_center = CommandCenter()
     cmd_center.generals = GENERALS
 
     while True:
