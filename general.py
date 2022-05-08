@@ -1,5 +1,6 @@
 import socket
-from threading import Thread
+from threading import Thread, Event
+from random import choice
 from enum import Enum
 
 
@@ -9,8 +10,8 @@ class Order(str, Enum):
 
 
 class State(str, Enum):
-    NON_FAULTY = "NF"
-    FAULTY = "F"
+    NON_FAULTY = "NON-FAULTY"
+    FAULTY = "FAULTY"
 
 
 class General(Thread):
@@ -22,8 +23,12 @@ class General(Thread):
         self._state: State = State.NON_FAULTY
         self._order: Order = None
         self._primary: bool = False
+        self._messages = []
+        self._allies: list[General] = []
 
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self._kill_flag = Event()
+        self._init_server()
 
     @property
     def id(self):
@@ -41,9 +46,17 @@ class General(Thread):
     def state(self):
         return self._state
 
+    @state.setter
+    def state(self, new_state):
+        self._state = new_state
+
     @property
     def order(self):
         return self._order
+
+    @order.setter
+    def order(self, new_order):
+        self._order = new_order
 
     @property
     def isPrimary(self):
@@ -57,13 +70,64 @@ class General(Thread):
     def sock(self):
         return self._sock
 
-    def init_server(self):
+    @property
+    def messages(self):
+        return self._messages
+
+    @property
+    def allies(self):
+        return self._allies
+
+    @allies.setter
+    def allies(self, new_allies):
+        self._allies = new_allies
+
+    def _init_server(self):
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.sock.bind((self.host, self.port))
         self.sock.listen()
 
+    @property
+    def kill_flag(self):
+        return self._kill_flag
+
+    def kill(self):
+        self._kill_flag.set()
+
+    def encode_msg(self, msg: str):
+        return msg.encode("utf-8")
+
+    def send_message(self, msg: str):
+        self.sock.sendall(msg)
+
+    def broadcast_order(self, order: str):
+        order = self.encode_msg(order)
+        for ally in self.allies:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                sock.connect((ally.host, ally.port))
+                sock.send(order)
+
     def run(self) -> None:
-        return super().run()
+        while not self.kill_flag.is_set():
+            try:
+                connection, client_addr = self.sock.accept()
+                order = connection.recv(4096)
+                order = order.decode("utf-8")
+                self.messages.append(order)
+
+                # verify received order with other allies
+                # if majority of the orders are the same
+                # execute order
+                # else cancel
+
+                if self.state != State.FAULTY:
+                    self.order = Order(order)
+                else:
+                    malicous_order = choice([Order.ATTACK, Order.RETREAT])
+                    self.order = malicous_order
+
+            except Exception as ex:
+                raise ex
 
     def __repr__(self) -> str:
-        return f"P{self.id}, STATE={self.state}, ORDER={self.order}"
+        return f"General(ID={self.id}, STATE={self.state}, ORDER={self.order})"
