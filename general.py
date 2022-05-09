@@ -1,4 +1,5 @@
 import socket
+import json
 from threading import Thread, Event
 from random import choice
 from enum import Enum
@@ -17,14 +18,15 @@ class State(str, Enum):
 class General(Thread):
     def __init__(self, id: int, port: int, host: str = "127.0.0.1") -> None:
         super(General, self).__init__(daemon=True)
-        self._id = id
-        self._port = port
-        self._host = host
+        self._id: int = id
+        self._port: int = port
+        self._host: str = host
         self._state: State = State.NON_FAULTY
         self._order: Order = None
         self._primary: bool = False
         self._messages = []
         self._allies: list[General] = []
+        self._decision = None
 
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._kill_flag = Event()
@@ -74,6 +76,10 @@ class General(Thread):
     def messages(self):
         return self._messages
 
+    @messages.setter
+    def messages(self, new_messages):
+        self._messages = new_messages
+
     @property
     def allies(self):
         return self._allies
@@ -81,6 +87,14 @@ class General(Thread):
     @allies.setter
     def allies(self, new_allies):
         self._allies = new_allies
+
+    @property
+    def decision(self):
+        return self._decision
+
+    @decision.setter
+    def decision(self, new_decision):
+        self._decision = new_decision
 
     def _init_server(self):
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -97,34 +111,62 @@ class General(Thread):
     def encode_msg(self, msg: str):
         return msg.encode("utf-8")
 
-    def send_message(self, msg: str):
-        self.sock.sendall(msg)
-
     def broadcast_order(self, order: str):
-        order = self.encode_msg(order)
         for ally in self.allies:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                data = {}
+                data["actual-order"] = order
+                data = json.dumps(data).encode("utf-8")
                 sock.connect((ally.host, ally.port))
-                sock.send(order)
+                sock.send(data)
+
+    def exchange_messages(self):
+        for ally in self.allies:
+            if not ally.isPrimary:
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                    data = {}
+                    data["sender"] = self.id
+                    data["receiver"] = ally.id
+                    data["message"] = self.order
+                    data = json.dumps(data).encode("utf-8")
+                    sock.connect((ally.host, ally.port))
+                    sock.send(data)
+
+    def _reset_messages(self):
+        self.messages = []
 
     def run(self) -> None:
         while not self.kill_flag.is_set():
             try:
                 connection, client_addr = self.sock.accept()
-                order = connection.recv(4096)
-                order = order.decode("utf-8")
-                self.messages.append(order)
+                packet = connection.recv(4096)
+                data = json.loads(packet.decode("utf-8"))
 
-                # verify received order with other allies
-                # if majority of the orders are the same
-                # execute order
-                # else cancel
+                # received order from primary
+                if "actual-order" in data:
+                    order = data["actual-order"]
 
-                if self.state != State.FAULTY:
-                    self.order = Order(order)
+                    if self.state != State.FAULTY:
+                        self.order = Order(order)
+                    else:
+                        malicous_order = choice([Order.ATTACK, Order.RETREAT])
+                        self.order = malicous_order
+
+                    self.messages.append(self.order.value)
+                    self.exchange_messages()
                 else:
-                    malicous_order = choice([Order.ATTACK, Order.RETREAT])
-                    self.order = malicous_order
+                    message = data["message"]
+                    self.messages.append(message)
+
+                    attack = self.messages.count("attack")
+                    retreat = self.messages.count("retreat")
+
+                    if attack > retreat:
+                        self.decision = "attack"
+                    elif attack < retreat:
+                        self.decision = "retreat"
+                    else:
+                        self.decision = "none"
 
             except Exception as ex:
                 raise ex

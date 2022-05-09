@@ -5,6 +5,7 @@ class CommandCenter:
     def __init__(self, generals: list[General] = [], default_port: int = 9000) -> None:
         self._generals: list[General] = generals
         self._default_port = default_port
+        self._executive_order = ""
 
     @property
     def generals(self) -> list[General]:
@@ -22,11 +23,18 @@ class CommandCenter:
     def default_port(self, new_port: int):
         self._default_port = new_port
 
-    def list_generals(self):
+    @property
+    def executive_order(self):
+        return self._executive_order
 
+    @executive_order.setter
+    def executive_order(self, order: str):
+        self._executive_order = order
+
+    def list_generals(self):
         for general in self.generals:
             print(
-                f"G{general.id}, primary={general.isPrimary}, order={general.order}, state={general.state}, port={general.port}"
+                f"G{general.id}, primary={general.isPrimary}, majority={self.executive_order}, state={general.state}"
             )
 
     def set_allies(self):
@@ -37,6 +45,10 @@ class CommandCenter:
         general: General = list(filter(lambda x: x.id == general_id, self.generals))[0]
         general.state = State(state)
 
+    def _election(self):
+        # for simplicity elect first one from the list
+        self.generals[0].isPrimary = True
+
     def kill_general_by_id(self, general_id: int):
         for general in self.generals:
             if general.id == general_id:
@@ -45,6 +57,9 @@ class CommandCenter:
                 self.generals = [
                     general for general in self.generals if general.id != general_id
                 ]
+
+                if general.isPrimary:
+                    self._election()
 
     def add_new_generals(self, n_generals: int) -> list[General]:
         """
@@ -76,12 +91,55 @@ class CommandCenter:
 
         return self.generals
 
-    def broadcast_order(self, order: str):
+    def _quorum(self):
+        attack = 0
+        retreat = 0
+
+        if len(self.generals) < 4:
+            self.executive_order = "Need more generals to decide"
+        else:
+            for general in self.generals:
+                decision = general.decision
+
+                if decision == "attack":
+                    attack += 1
+                if decision == "retreat":
+                    retreat += 1
+
+            if attack > retreat:
+                self.executive_order = "attack"
+            elif attack < retreat:
+                self.executive_order = "retreat"
+            else:
+                self.executive_order = "no decision"
+
+    def _broadcast_order(self, order: str):
         primary_general: General = list(filter(lambda x: x.isPrimary, self.generals))[0]
         primary_general.order = Order(order)
         primary_general.broadcast_order(order)
 
+    def actual_order(self, order: str):
+        self._broadcast_order(order)
+        self._quorum()
+        non_faulty_gens = len(
+            [
+                gen
+                for gen in self.generals
+                if (gen.state == State.NON_FAULTY) and (not gen.isPrimary)
+            ]
+        )
+        total_gens = len(self.generals)
+
+        for general in self.generals:
+            print(
+                f"G{general.id}, primary={general.isPrimary}, majority={self.executive_order}, state={general.state}"
+            )
+            general._reset_messages()
+
+        print(
+            f"Executive order: {self.executive_order}! {non_faulty_gens} NF nodes of {total_gens} suggest {self.executive_order}."
+        )
+
     def terminate_generals(self):
         for general in self.generals:
-            general.sock.close()
             general.kill()

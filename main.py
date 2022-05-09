@@ -22,8 +22,7 @@ def main():
 
         if command == "actual-order":
             order = user_input[1]
-            cmd_center.broadcast_order(order)
-            pass
+            cmd_center.actual_order(order=order)
 
         elif command == "g-state":
             if len(user_input) == 1:
@@ -42,15 +41,12 @@ def main():
             GENERALS = cmd_center.add_new_generals(n_generals)
 
         elif command == "exit":
-            # TODO: surpress exception messages
             try:
                 cmd_center.terminate_generals()
                 print("Programm terminated.")
-                break
+                exit(0)
             except Exception:
                 pass
-            finally:
-                exit(1)
 
         else:
             print("Unsupported command.")
